@@ -1,0 +1,44 @@
+一. 请说明SSE和websocket的区别
+1.websocket是双向通信，sse只是服务端到客户端
+2.websocket是ws/wss协议，sse是http协议
+3.websocket需要特殊的upgrade握手，sse可以直接get
+4.websocket需要手动重连，sse支持浏览器自动重连
+
+二.请详细描述一下浏览器时间循环机制，并说明在处理ai流式响应时它扮演了什么角色
+1.同步任务-》宏任务-〉所有微任务-》下一个宏任务 -〉所有微任务。。。
+2.当使用 SSE 接收 AI 生成的文本时，数据是分批到达的。每一批数据（即每一个 message 事件）都被浏览器视为一个宏任务。
+调度机制：SSE 的每个数据块作为独立宏任务进入队列，确保它们被有序处理。
+渲染时机：UI 渲染发生在宏任务之间，使得每次数据到达后都能及时反映到界面上。
+非阻塞保障：只要 onmessage 回调保持轻量，主线程就不会被阻塞，用户体验流畅。
+微任务介入：若在回调中使用 Promise，微任务会在当前宏任务结束后、UI 渲染前执行，可用于预处理数据而不影响渲染节奏。
+✅ 最佳实践建议：
+保持 onmessage 回调简洁，只做数据追加。
+避免在回调中进行复杂计算或同步 DOM 查询。
+如需复杂处理，使用 setTimeout、requestIdleCallback 或 Web Worker 异步化。
+
+三. 实现ai对话聊天界面时，如何处理长文字，滚动，并保持性能
+
+1. 只有当用户已经处于底部或接近底部时，才自动滚动。如果用户向上滚动查看历史，新消息到来时不应强制拉回底部，而是显示一个“新消息提示”按钮。
+function isUserAtBottom(container, threshold = 50) {
+  // threshold: 允许的距离底部的像素误差
+  return container.scrollHeight - container.scrollTop - container.clientHeight <= threshold;
+}
+2.避免频繁的 DOM 插入，维护一个缓冲区，每隔一定时间（如 100ms）或一定字符数（如 50 个字符）批量更新 DOM
+
+四. 如何处理在流式接口请求过程中的网络异常中断以及用户点击中断按钮
+1.用户点击停止，前端new AbortController().abort()，透出AbortError
+2.服务器断开，TypeError, SyntaxError，让用户点击重试，重开连接，抛弃之前的请求
+
+五.前端如何防范提示词注入与攻击
+1.长度限制，特殊字符过滤，黑名单
+2.DOMPurify 清洗 HTML， 禁用eval
+
+六. 设计前端通用ai组件库都需要考虑什么
+1.封装hooks处理流式解析，历史记录管理，状态切换等逻辑
+2.支持通过adapter适配不同厂商的api协议
+
+七. ai时代的前端工程师需要做些什么
+1.不再纠结于像素级ui的还原，更注重设计流畅的自然语言交互页面
+2.需要对大模型的能力，边界有一定的认知，要始终追逐前沿技术（hermes），探究是否能落地
+3.如何运用harness构建更稳定的工作流
+4.全栈化
