@@ -1,0 +1,78 @@
+一. vite的完整构建流程
+(开发侧)
+1.Vite 读取 index.html，分析其中的 <script type="module" src="..."> 标签，找到入口文件（如 main.js）
+2.Vite 扫描源码中的 import 语句，区分两类依赖：
+强依赖 (CommonJS / bare imports)：如 import Vue from 'vue' 或 import _ from 'lodash'。这些通常在 node_modules 中，可能是 CommonJS 格式，或者内部包含成千上万个模块。
+源码依赖：你自己写的 .vue, .ts, .jsx 文件。
+3.执行 Pre-bundling (使用 esbuild)：
+Vite 调用 esbuild（Go 语言编写，极速）对强依赖进行预构建。
+目的：
+将 CommonJS/UMD 格式转换为标准的 ESM 格式。
+将多个分散的模块合并（Bundle），减少浏览器请求数量（避免瀑布流）。
+处理兼容性（如将 react/jsx-runtime 映射正确）。
+缓存：结果被存储在 node_modules/.vite/deps 目录下。只要 package.json 没变，下次启动直接复用缓存，秒级启动。
+4.当浏览器开始加载页面时：
+
+拦截请求：Vite 开发的 Node.js 服务器（基于 Koa/Connect）拦截所有文件请求。
+路径解析：
+如果是相对路径（./foo），Vite 将其解析为绝对路径。
+如果是裸模块（import x from 'vue'），指向预构建后的 node_modules/.vite/deps/vue.js。
+插件链处理 (Plugin Pipeline)：
+Vite 根据文件后缀名（.vue, .ts, .scss 等），按顺序调用配置的插件。
+转换 (Transform)：插件将非标准代码转换为浏览器能懂的标准 ESM JavaScript。
+例如：.vue -> 拆分为 JS + CSS 注入代码；.ts -> 移除类型注解；.scss -> 编译为 CSS 并包装成 JS 模块。
+5.HMR: 当你修改了 ComponentA.vue,只重新请求 ComponentA.vue 的转换后代码，vite编译后返回
+（生产侧）
+1. 初始化与配置加载
+读取 vite.config.ts/js。
+确定入口文件（通常是 index.html）。
+加载所有插件（包括官方插件和用户自定义插件）。
+2. 依赖预构建 (再次发生，但目的不同)
+虽然开发时做过预构建，但在生产构建前，Vite 可能会再次检查依赖，确保所有第三方库都已准备好被 Rollup 处理。
+这一步通常很快，因为主要工作由 Rollup 在后续步骤完成。
+3. Rollup 构建核心流程 (The Bundling)
+这是真正的“打包”过程，完全由 Rollup 驱动：
+
+A. 构建依赖图 (Graph Construction)
+
+Rollup 从入口文件（index.html 引用的 JS）开始。
+递归解析所有的 import 语句（包括动态导入 import()）。
+调用 Vite 插件系统的 load 和 transform 钩子，将所有文件（.vue, .ts, .css, 图片等）转换为标准的 JS 模块。
+形成一棵完整的模块依赖树。
+B. Tree Shaking (摇树优化)
+
+Rollup 分析依赖图，识别哪些导出的变量/函数从未被使用。
+将这些无用代码直接从最终包中剔除。这是 Rollup 的杀手锏，能显著减小体积。
+C. 代码分割 (Code Splitting)
+
+自动分割：node_modules 中的依赖通常会被自动分离到单独的 vendor-xxxx.js 文件中，利用浏览器缓存。
+动态导入：遇到 const mod = await import('./heavy-module.js')，Rollup 会自动将其拆分为独立的 Chunk（块），实现懒加载。
+手动分割：用户可以通过 build.rollupOptions.output.manualChunks 自定义分割策略。
+D. 资源处理
+
+CSS 提取：默认情况下，所有 CSS 会被提取并合并成一个或多个 .css 文件（也可配置为内联到 JS）。
+静态资源：图片、字体等小文件可能被转为 Base64 内联，大文件会被复制并重命名（添加哈希值，如 logo.a3f2.png）以实现缓存失效控制。
+E. 压缩与优化 (Minification)
+
+默认使用 esbuild 进行代码压缩（比 Terser 快 20-40 倍）。
+移除空格、注释，缩短变量名，进行语法降级（如果配置了 target）。
+生成 Source Map（如果配置开启）。
+4. HTML 注入与输出
+Rollup 生成最终的 JS/CSS 文件名（带哈希）。
+Vite 插件 (vite:build-html) 读取原始的 index.html。
+注入标签：将生成的 <script src="..."> 和 <link rel="stylesheet" ...> 标签自动插入到 index.html 中。
+预处理：对 HTML 本身进行压缩。
+5. 写入磁盘
+将所有生成的文件（index.html, assets/*.js, assets/*.css, assets/*.png 等）写入配置的输出目录（默认为 dist/）。
+
+
+二.
+
+三.多种模块化方案
+1.esm
+2.commonJs
+3.IIFE
+4.AMD
+5.UMD
+
+
